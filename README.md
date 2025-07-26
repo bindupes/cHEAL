@@ -85,4 +85,4 @@ VQA covers 40+ question types, such as:
 ---
 
 
-
+DATASET LINK : https://www.kaggle.com/datasets/fenicxs/sickle-cell-anaemia
