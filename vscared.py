@@ -9,6 +9,10 @@ matplotlib.use('Agg')  # Use non-GUI backend
 import matplotlib.pyplot as plt
 import re
 from difflib import SequenceMatcher
+import webbrowser
+import subprocess
+import threading
+import time
 
 # Load model once
 @st.cache_resource
@@ -85,6 +89,45 @@ def highlight_cells(image_path):
     output_rgb = cv2.cvtColor(output, cv2.COLOR_BGR2RGB)
     return output_rgb
 
+def open_color_analysis_tool():
+    """Opens the color analysis HTML tool in default browser"""
+    try:
+        # Get the absolute path to color.html
+        color_html_path = os.path.abspath("color.html")
+        
+        if os.path.exists(color_html_path):
+            # Open in default browser
+            webbrowser.open(r"C:\Users\17bin\OneDrive\Desktop\Documents\PERSONAL_GROWTH\cHEAL\17july\color.html")
+            return True
+        else:
+            st.error("❌ color.html file not found! Please make sure it's in the same directory as this script.")
+            return False
+    except Exception as e:
+        st.error(f"❌ Error opening color analysis tool: {str(e)}")
+        return False
+    
+def create_color_analysis_button():
+    """Creates a button that opens the color analysis tool"""
+    st.markdown("### 🎨 Advanced Color Analysis Tool")
+    st.info("For detailed RBC color analysis and stain identification, use our specialized tool:")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🔬 Open Color Analysis Tool", key="color_tool_btn", help="Opens color.html in your browser"):
+            with st.spinner("Opening color analysis tool..."):
+                if open_color_analysis_tool():
+                    st.success("✅ Color analysis tool opened in your browser!")
+                    st.markdown("""
+                    **Instructions:**
+                    1. Upload your blood smear image in the opened tool
+                    2. Click 'Analyze RBC Colors' 
+                    3. Get detailed color analysis and stain identification
+                    4. Download the analysis report if needed
+                    """)
+                else:
+                    st.error("Failed to open the color analysis tool.")
+
+
 # Spell check function
 def check_spelling_and_suggest(text, common_words):
     words = text.lower().split()
@@ -133,6 +176,18 @@ def understand_question(question):
     
     corrected_question, corrections_made = check_spelling_and_suggest(question, common_words)
     
+    color_keywords = [
+        'what is color of rbc', 'what is color of cell', 'what is the color of rbc',
+        'what is the color of cell', 'color of rbc', 'color of cell', 'color of cells',
+        'what color are the rbc', 'what color are the cells', 'rbc color', 'cell color',
+        'what stain', 'which stain', 'stain used', 'staining', 'identify stain',
+        'color analysis', 'analyse color', 'analyze color'
+    ]
+    
+    if any(phrase in corrected_question for phrase in color_keywords):
+        return 'color_analysis', corrected_question, corrections_made
+    
+
     # NEW QUESTION TYPES - Priority order matters!
     
     # Image content question
@@ -144,7 +199,7 @@ def understand_question(question):
         return 'harmful', corrected_question, corrections_made
     
     # Permanent cure/getting rid of it
-    if any(phrase in corrected_question for phrase in ['get rid', 'permanently', 'permanent cure', 'cure permanently']):
+    if any(phrase in corrected_question for phrase in ['get rid', 'permanently', 'permanent cure', 'cure permanently','treatment']):
         return 'permanent_cure', corrected_question, corrections_made
     
     # Why does it occur
@@ -155,12 +210,26 @@ def understand_question(question):
     if any(word in corrected_question for word in ['lifespan', 'life span', 'live long', 'die', 'death', 'reduced']):
         return 'lifespan', corrected_question, corrections_made
     
+    if any(phrase in corrected_question for phrase in [
+    'how should i care', 
+    'self care', 
+    'how to manage', 
+    'how can i stay healthy', 
+    'lifestyle tips', 
+    'daily care', 
+    'prevent crisis', 
+    'how to stay healthy',
+    'sickle cell management'
+   ]):
+        return 'selfcare', corrected_question, corrections_made
+
+
     # Common disease question
-    if any(phrase in corrected_question for phrase in ['common disease', 'how common', 'common condition']):
+    if any(phrase in corrected_question for phrase in ['common disease', 'how common', 'common condition','disease common']):
         return 'common', corrected_question, corrections_made
     
     # Activities for improvement
-    if any(phrase in corrected_question for phrase in ['activities', 'improve health', 'what to do', 'help health']):
+    if any(phrase in corrected_question for phrase in ['activities', 'improve health', 'what to do', 'help health','exercise']):
         return 'activities', corrected_question, corrections_made
     
     # What not to do/eat
@@ -184,7 +253,7 @@ def understand_question(question):
         return 'difference_normal', corrected_question, corrections_made
     
     # Normal activities question
-    if any(phrase in corrected_question for phrase in ['normal activities', 'job', 'work', 'stress', 'sleep late']):
+    if any(phrase in corrected_question for phrase in ['normal activities', 'job', 'work', 'stress', 'sleep late','daily routine','routine']):
         return 'normal_activities', corrected_question, corrections_made
     
     # Inheritance only question
@@ -193,15 +262,27 @@ def understand_question(question):
 
     
     # Age-related questions
-    if any(phrase in corrected_question for phrase in ['what age', 'from what age', 'age symptoms', 'age treatment']):
-        return 'age_related', corrected_question, corrections_made
-    
-    # Treatment age questions
-    if any(phrase in corrected_question for phrase in ['right age treatment', 'age for treatment', 'when to treat']):
-        return 'treatment_age', corrected_question, corrections_made
+    # Age-related treatment questions
+    if any(phrase in corrected_question for phrase in [
+    'what age', 'from what age', 'age symptoms', 'age treatment',
+    'at which age', 'at what age', 'what is right age to get treatment',
+    'at what age should treatment start', 'when should sickle cell treatment begin',
+    'is there a best age to start treatment', 'when is the best time to treat sickle cell',
+    'should treatment start early in life', 'is early treatment better for sickle cell',
+    'how early should treatment be given', 'when to start meds for sickle cell',
+    'can i wait to treat sickle cell', 'is there a right age for treatment',
+    'too young for sickle cell treatment', 'what age do doctors recommend treatment',
+    'should babies be treated for sickle cell', 'when do doctors start treating sickle cell',
+    'right age', 'age to start treatment', 'when to treat',
+    'best age', 'when should treatment', 'when to start treatment',
+    'age should i start treatment', 'start treatment age',
+    'early treatment', 'start meds', 'too young for treatment'
+]):
+       return 'treatment_age', corrected_question, corrections_made
+
     
     # Cure availability questions
-    if any(phrase in corrected_question for phrase in ['everyone get cured', 'cure for everyone', 'why no cure']):
+    if any(phrase in corrected_question for phrase in ['everyone get cured', 'cure for everyone', 'why no cure','treatment for cure']):
         return 'cure_availability', corrected_question, corrections_made
     
     # Treatment danger questions
@@ -221,15 +302,23 @@ def understand_question(question):
         return 'trait_vs_disease', corrected_question, corrections_made
     
     # Gender inheritance questions
-    if any(phrase in corrected_question for phrase in ['boys and girls', 'male female', 'gender inherit']):
-        return 'gender_inheritance', corrected_question, corrections_made
+    if any(phrase in corrected_question for phrase in [
+    'boys and girls', 'girls and boys', 'do boys and girls', 'males and females',
+    'male and female', 'men and women', 'gender inherit', 'inherit equally',
+    'same for boys and girls', 'is inheritance same for genders', 'will girls get it too',
+    'is it equal in boys and girls', 'does gender matter', 'do both genders',
+    'do boys inherit same', 'do girls inherit same', 'gender difference in inheritance',
+    'gender wise inheritance'
+]):
+      return 'gender_inheritance', corrected_question, corrections_made
+
     
     # Early signs in kids
     if any(phrase in corrected_question for phrase in ['early signs', 'kids symptoms', 'children signs']):
         return 'early_signs', corrected_question, corrections_made
     
     # Untreated consequences
-    if any(phrase in corrected_question for phrase in ['left untreated', 'not treated', 'ignored', 'late treatment']):
+    if any(phrase in corrected_question for phrase in ['left untreated', 'not treated', 'ignored', 'late treatment','untreated']):
         return 'untreated', corrected_question, corrections_made
     
     # Pain crisis questions
@@ -265,20 +354,46 @@ def understand_question(question):
         return 'donor_eligibility', corrected_question, corrections_made
     
     # Treatment risks
-    if any(phrase in corrected_question for phrase in ['risks of treatment', 'treatment risks', 'side effects']):
-        return 'treatment_risks', corrected_question, corrections_made
+    if any(phrase in corrected_question for phrase in [
+    'risks of treatment', 'treatment risks', 'side effects',
+    'complications of treatment', 'is treatment safe', 'dangers of treatment',
+    'hydroxyurea side effects', 'risks of hydroxyurea', 'blood transfusion risks',
+    'bone marrow transplant risks', 'gene therapy risks',
+    'any treatment risks', 'any side effects', 'treatment danger',
+    'is there any risk in treatment', 'problems with treatment',
+    'downsides of treatment', 'can treatment be harmful',
+    'does treatment have complications', 'possible risks of treatment'
+]):
+      return 'treatment_risks', corrected_question, corrections_made
+
     
     # Permanent vs temporary treatment
     if any(phrase in corrected_question for phrase in ['permanent temporary', 'types of treatment', 'treatment types']):
         return 'treatment_types', corrected_question, corrections_made
     
     # Lifestyle changes
-    if any(phrase in corrected_question for phrase in ['lifestyle changes', 'reduce pain', 'prevent crisis']):
-        return 'lifestyle', corrected_question, corrections_made
+    if any(phrase in corrected_question for phrase in [
+    'lifestyle changes', 'lifestyle difference', 'life with sickle cell',
+    'reduce pain', 'prevent crisis', 'daily routine', 'how is their life',
+    'live normal life', 'how is life different', 'affected person life',
+    'precautions in daily life', 'how should i care myself', 
+    'lifestyle for sickle cell', 'how do they live', 'sickle cell lifestyle', 
+    'how to manage lifestyle', 'can i live normally', 'adjust life for sickle cell'
+]):
+      return 'lifestyle', corrected_question, corrections_made
+
     
     # Country statistics
-    if any(phrase in corrected_question for phrase in ['which country', 'highest cases', 'most cases']):
-        return 'country_stats', corrected_question, corrections_made
+    if any(phrase in corrected_question for phrase in [
+    'best country for treatment', 'which country treats best', 
+    'where is best treatment', 'which country is good for care',
+    'best hospitals for sickle cell', 'where to get good treatment',
+    'top country for treatment', 'where is treatment best', 
+    'which country helps most', 'country with best healthcare for sickle cell',
+    'best care for sickle cell'
+]):
+      return 'treatment_country', corrected_question, corrections_made
+
     
     # Types of sickle cell
     if any(phrase in corrected_question for phrase in ['types of sickle', 'sickle cell types', 'different types']):
@@ -333,8 +448,17 @@ def understand_question(question):
 
 
     # Treatment locations
-    if any(phrase in corrected_question for phrase in ['best places', 'treatment location', 'where to treat']):
-        return 'treatment_locations', corrected_question, corrections_made
+    if any(phrase in corrected_question for phrase in [
+    'best treatment locations', 'where to get treated', 'treatment centers',
+    'specialist hospitals for sickle cell', 'best hospitals for sickle cell',
+    'top clinics for treatment', 'where should i get treated', 
+    'treatment facilities', 'where to go for sickle cell treatment',
+    'sickle cell centers', 'famous treatment hospitals', 
+    'locations for sickle cell care', 'best place to cure sickle cell',
+    'best hospitals for bone marrow transplant'
+]):
+      return 'treatment_locations', corrected_question, corrections_made
+
     
     # ORIGINAL QUESTION TYPES (keeping existing logic)
     # Question categories - check food/diet questions FIRST before treatment
@@ -389,6 +513,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += f"🔧 Spelling corrections: {corrections_text}\n\n"
     
     # NEW RESPONSE CASES
+    
+
     if question_type == 'image_content':
      response += "Looking at this blood smear image, I can see:\n\n"
      response += "**What's in the image:**\n"
@@ -404,7 +530,22 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += f"• **Normal, healthy red blood cells** - appearing round and disc-shaped as they should be\n"
         response += f"• No abnormal or sickle-shaped cells detected (I'm {confidence*100:.1f}% confident these are normal cells)\n\n"
         response += "This appears to be a healthy blood sample with normal red blood cells."
+        return response, False
 
+    if question_type == 'color_analysis':
+        response += "🎨 **RBC Color & Stain Analysis Request**\n\n"
+        response += "For detailed color analysis and stain identification, I'll open our specialized color analysis tool for you!\n\n"
+        response += "**What the color analysis tool will do:**\n"
+        response += "• 🔍 Detect the exact color of your RBCs (Blue, Red, Purple, Green, etc.)\n"
+        response += "• 🧪 Identify the most likely stain used with confidence scores\n"
+        response += "• 📊 Provide detailed RGB values and statistical analysis\n"
+        response += "• 📋 Generate a downloadable analysis report\n\n"
+        response += "**Supported stains include:**\n"
+        response += "• Giemsa, Wright's, Leishman stains\n"
+        response += "• H&E, Methylene Blue, Trypan Blue\n"
+        response += "• Gram stain, Crystal Violet, and more!\n\n"
+        response += "Click the button below to open the color analysis tool! 👇"
+        return response, True  #
     
     elif question_type == 'harmful':
         response += "**Is sickle cell disease harmful or dangerous?**\n\n"
@@ -416,7 +557,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**The key is:** Don't ignore it - get proper medical care and follow treatment plans."
         if is_sickle:
             response += f"\n\nSince your blood sample shows signs of sickle cell disease ({confidence*100:.1f}% confidence), it's important to work with a hematologist for proper management."
-    
+        return response, False
+
     elif question_type == 'definition':
         response += "**What is Sickle Cell Disease?**\n\n"
         response += "Sickle cell disease is a **genetic blood disorder** that affects the shape and function of red blood cells.\n\n"
@@ -430,6 +572,7 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• It's inherited — you must get the gene from both parents\n"
         response += "• It affects millions worldwide, especially in Africa, India, and the Middle East\n"
         response += "• While there's no universal cure, treatments can reduce symptoms and improve life expectancy"
+        return response, False
 
     elif question_type == 'anemia':
         response += "**What is Anemia?**\n\n"
@@ -449,7 +592,7 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• It’s often caused by poor diet, blood loss, or chronic diseases\n"
         response += "• It can be treated based on the cause — diet changes, supplements, or medical care\n"
         response += "• Sickle cell anemia is a type of inherited anemia where red blood cells are misshapen and break down easily"
-
+        return response, False
 
 
     elif question_type == 'diet':
@@ -463,7 +606,7 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
       response += "**Avoid or Limit:**\n"
       response += "• Alcohol\n• High-sugar processed foods\n• Smoking\n\n"
       response += "**Key message:** Nutrition alone won't cure sickle cell, but it strengthens your immune system and improves overall health."
-
+      return response, False
 
     elif question_type == 'permanent_cure':
         response += "**Can you get rid of sickle cell disease permanently?**\n\n"
@@ -473,7 +616,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**New promising treatments:**\n"
         response += "• Gene therapy - still experimental but showing promise\n• Gene editing (CRISPR) - in clinical trials\n• These may become available in the future\n\n"
         response += "**For now:** Most people manage the disease very well with medications like hydroxyurea, which can make symptoms much milder, even though it doesn't cure the disease."
-    
+        return response, False
+
     elif question_type == 'why_occur':
         response += "**Why does sickle cell disease occur?**\n\n"
         response += "It's purely **genetic** - here's the simple explanation:\n\n"
@@ -482,7 +626,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Why the cells become sickle-shaped:**\n"
         response += "• The mutated hemoglobin forms long, rigid chains when oxygen levels drop\n• These chains distort the normally round, flexible red blood cells\n• The cells become crescent or 'sickle' shaped\n• These rigid cells can block blood flow and break apart easily\n\n"
         response += "**Important:** You cannot develop sickle cell disease from lifestyle, diet, or environment - you're born with it."
-    
+        return response, False
+
     elif question_type == 'lifespan':
         response += "**Will lifespan be reduced with sickle cell disease?**\n\n"
         response += "The good news is that life expectancy has improved dramatically:\n\n"
@@ -493,7 +638,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Historical vs. Modern:**\n"
         response += "• In the past (1970s), average lifespan was much shorter\n• Modern medicine has changed this dramatically\n• New treatments continue to improve outcomes\n\n"
         response += "**Key message:** With proper care, most people with sickle cell disease can expect to live long, fulfilling lives."
-    
+        return response, False
+
     elif question_type == 'common':
         response += "**Is sickle cell disease a common condition?**\n\n"
         response += "**Global perspective:**\n"
@@ -501,7 +647,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Why it's more common in certain regions:**\n"
         response += "• The sickle cell gene provides protection against malaria\n• In areas where malaria is common, the gene persisted because it helped people survive malaria\n• This is why it's more common in people from tropical regions\n\n"
         response += "**In summary:** It's common in certain ethnic groups but relatively rare in the general population of some countries. However, due to global migration, it's now found worldwide."
-    
+        return response, False
+
     elif question_type == 'activities':
         response += "**Activities to improve health with sickle cell disease:**\n\n"
         response += "**Physical Activities (with caution):**\n"
@@ -512,7 +659,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• Get regular medical check-ups\n• Stay up-to-date with vaccinations\n• Avoid extreme temperatures (too hot or cold)\n• Manage stress through relaxation techniques\n• Avoid smoking and excessive alcohol\n\n"
         response += "**Mental Health:**\n"
         response += "• Stay connected with family and friends\n• Consider support groups\n• Practice stress management\n• Maintain hobbies and interests you enjoy"
-    
+        return response, False
+
     elif question_type == 'avoid':
         response += "**What NOT to do and eat that could worsen sickle cell health:**\n\n"
         response += "**❌ Activities to AVOID:**\n"
@@ -522,7 +670,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**⚠️ Situations to be careful with:**\n"
         response += "• Flying without staying hydrated\n• Swimming in very cold water\n• Skipping meals regularly\n• Not taking prescribed medications\n• Stress without management techniques\n\n"
         response += "**💡 Remember:** The #1 trigger for sickle cell crises is dehydration, so always prioritize staying well-hydrated!"
-    
+        return response, False
+
     elif question_type == 'contagious':
         response += "**Is sickle cell disease contagious?**\n\n"
         response += "**Absolutely NOT!** Sickle cell disease is **NOT contagious** at all.\n\n"
@@ -533,7 +682,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**What this means:**\n"
         response += "• It's completely safe to be around people with sickle cell disease\n• They can live normally in families, schools, and workplaces\n• No special precautions needed to prevent 'catching' it\n\n"
         response += "**The only way to 'get' sickle cell disease is to inherit the genes from both parents at birth.**"
-    
+        return response, False
+
     elif question_type == 'breastfeeding':
         response += "**Can a woman with sickle cell disease breastfeed her baby?**\n\n"
         response += "**Yes, absolutely!** Women with sickle cell disease can safely breastfeed their babies.\n\n"
@@ -544,7 +694,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Special notes:**\n"
         response += "• Breastfeeding itself doesn't worsen sickle cell disease\n• However, the physical demands of caring for a newborn can be tiring\n• Having support from family/partners is very helpful\n• Consult with your hematologist about any medications\n\n"
         response += "**Bottom line:** Breastfeeding is encouraged and safe for both mother and baby!"
-    
+        return response, False
+
     elif question_type == 'sexual':
         response += "**Can you have sexual intercourse if you have sickle cell disease?**\n\n"
         response += "**Yes, absolutely!** Having sickle cell disease doesn't prevent you from having a normal sexual life.\n\n"
@@ -555,7 +706,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Fertility considerations:**\n"
         response += "• Most people with sickle cell disease can have children\n• Genetic counseling can help understand risks to future children\n• Pregnancy may need extra medical monitoring\n\n"
         response += "**Bottom line:** Your romantic and sexual life can be completely normal!"
-    
+        return response, False
+
     elif question_type == 'difference_normal':
         response += "**How is a sickle cell infected person different from a normal person?**\n\n"
         response += "**Physical differences:**\n"
@@ -565,7 +717,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**What's the SAME as normal people:**\n"
         response += "• Intelligence and mental abilities are completely normal\n• Can work, study, and have careers\n• Can have relationships and families\n• Can enjoy hobbies and social activities\n• Life goals and dreams remain the same\n\n"
         response += "**Key point:** The main difference is in managing health - most aspects of life remain completely normal!"
-    
+        return response, False
+
     elif question_type == 'normal_activities':
         response += "**Can a person with sickle cell do normal activities like work, handle stress, or sleep late?**\n\n"
         response += "**Work/Job:**\n"
@@ -577,7 +730,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Other Normal Activities:**\n"
         response += "• Social gatherings - ✅ Yes\n• Sports (moderate) - ✅ Yes\n• Travel - ✅ Yes (with precautions)\n• Education - ✅ Completely normal\n\n"
         response += "**Bottom line:** You can live a very normal life with some smart health management!"
-    
+        return response, False
+
     elif question_type == 'inheritance':
         response += "**Is sickle cell  inherited?**\n\n"
         response += "**Yes, sickle cell disease is ONLY inherited - you cannot develop it any other way.**\n\n"
@@ -588,33 +742,39 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**What you CANNOT get sickle cell from:**\n"
         response += "• Poor diet or lifestyle\n• Infections or diseases\n• Environmental factors\n• Injuries or accidents\n• Contact with affected people\n\n"
         response += "**Key message:** It's purely genetic - determined at the moment of conception!"
-    
-    elif question_type == 'age_related':
-        response += "**From what age do sickle cell symptoms begin?**\n\n"
-        response += "**Symptoms typically start in early childhood:**\n\n"
-        response += "**Newborn (0-6 months):**\n"
-        response += "• Usually no symptoms yet\n• Protected by fetal hemoglobin (HbF) from mother\n• This protection gradually decreases\n\n"
-        response += "**6 months - 2 years:**\n"
-        response += "• First symptoms often appear around 6 months\n• Hand-foot syndrome (swelling of hands/feet) - often the first sign\n• Increased fussiness or crying (due to pain)\n• Frequent infections\n\n"
-        response += "**Early childhood (2-5 years):**\n"
-        response += "• Pain episodes become more recognizable\n• Delayed growth may become noticeable\n• Anemia symptoms (fatigue, paleness)\n\n"
-        response += "**School age and beyond:**\n"
-        response += "• More typical pain crises\n• Symptoms continue throughout life but can be managed\n\n"
-        response += "**Important note:** Early diagnosis (through newborn screening) allows for preventive care even before symptoms start, which greatly improves outcomes!"
-    
+        return response, False
+
     elif question_type == 'treatment_age':
-        response += "**What is the right age to get sickle cell treatment?**\n\n"
-        response += "**Treatment should start IMMEDIATELY after diagnosis - there's no 'waiting' for the right age!**\n\n"
-        response += "**Newborn to 6 months:**\n"
-        response += "• Prophylactic antibiotics to prevent infections\n• Folic acid supplements\n• Regular check-ups\n• Vaccinations on schedule\n\n"
-        response += "**6 months onwards:**\n"
-        response += "• Hydroxyurea (if recommended by doctor)\n• Pain management strategies\n• Continued infection prevention\n\n"
-        response += "**For permanent treatments:**\n"
-        response += "• **Bone marrow transplant:** Best results in children under 16\n• Success rates are highest in younger patients\n• However, it can be done at any age if suitable donor is available\n\n"
-        response += "**Key principles:**\n"
-        response += "• **Prevention is better than cure** - start early\n• **Never too late** - treatment helps at any age\n• **Younger = better outcomes** for major procedures\n• **Every age benefits** from proper medical care\n\n"
-        response += "**Bottom line:** Start treatment as soon as diagnosed, regardless of age!"
-    
+        response += "**🧒 What is the Right Age to Start Treatment for Sickle Cell Disease?**\n\n"
+        response += "Treatment should start **as early as possible**, ideally in **infancy**, immediately after diagnosis. Early treatment greatly improves long-term health outcomes and prevents complications.\n\n"
+
+        response += "**🍼 Newborn to 6 months:**\n"
+        response += "• Begin medical monitoring right after birth\n"
+        response += "• Start **penicillin** (usually by 2 months) to prevent infections\n"
+        response += "• **Folic acid supplements** to support red blood cell production\n"
+        response += "• Follow standard **vaccination schedules** closely\n\n"
+
+        response += "**👶 6 months and above:**\n"
+        response += "• Continue antibiotics and vaccinations\n"
+        response += "• **Hydroxyurea** may be prescribed to reduce complications\n"
+        response += "• Implement pain management strategies\n\n"
+
+        response += "**🏥 Advanced/Permanent Treatment Options:**\n"
+        response += "• **Bone marrow/stem cell transplant:** Best outcomes in children under 16\n"
+        response += "• Can still be performed in adults if a suitable donor is available\n\n"
+
+        response += "**💡 Why Early Treatment Matters:**\n"
+        response += "• Prevents organ damage and infections\n"
+        response += "• Supports healthy growth and development\n"
+        response += "• Reduces pain crises and hospitalization\n\n"
+
+        response += "**✅ Key Takeaways:**\n"
+        response += "• Start treatment **as soon as sickle cell is diagnosed**\n"
+        response += "• There is **no 'perfect' age — earlier is better**\n"
+        response += "• Treatment at **any age** is beneficial\n"
+        response += "• **Younger age = better outcomes**, especially for advanced procedures"
+        return response, False
+
     elif question_type == 'cure_availability':
         response += "**Can everyone get cured if treated? Why isn't there a cure for everyone?**\n\n"
         response += "**Unfortunately, not everyone can be cured currently. Here's why:**\n\n"
@@ -627,7 +787,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Current reality:**\n"
         response += "• Most people manage very well with medications\n• Quality of life has improved dramatically\n• Research continues for better cures\n\n"
         response += "**Hope:** Medical advances are making cures available to more people each year!"
-    
+        return response, False
+
     elif question_type == 'treatment_danger':
         response += "**Is sickle cell treatment dangerous? Could you die from treatment?**\n\n"
         response += "**Daily treatments (medications) are generally very safe:**\n\n"
@@ -640,7 +801,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Important perspective:**\n"
         response += "• Risk of NOT treating sickle cell is much higher than treatment risks\n• Untreated sickle cell can cause organ damage and early death\n• Modern treatments are much safer than in the past\n• Experienced medical teams minimize risks\n\n"
         response += "**Bottom line:** Treatment risks are much smaller than the risks of untreated sickle cell disease!"
-    
+        return response, False
+
     elif question_type == 'bone_marrow_danger':
         response += "**Is bone marrow transplant dangerous? What about for an elderly lady?**\n\n"
         response += "**Bone marrow transplant risks vary significantly by age:**\n\n"
@@ -655,20 +817,56 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Decision factors for elderly patients:**\n"
         response += "• Overall health status\n• Severity of sickle cell symptoms\n• Quality of life with current treatments\n• Family support system\n\n"
         response += "**Bottom line:** For elderly patients, doctors carefully weigh risks vs. benefits. Many may be better managed with medications rather than transplant."
-    
+        return response, False
+
+    elif question_type == 'selfcare':
+        response += "**Self-Care and Management for Sickle Cell Disease**\n\n"
+        response += "Managing sickle cell disease involves daily habits, medical care, and lifestyle adjustments that reduce complications.\n\n"
+        response += "**Key self-care tips include:**\n"
+        response += "• **Stay hydrated:** Drink plenty of water to keep blood flowing smoothly\n"
+        response += "• **Avoid extreme temperatures:** Cold or hot weather can trigger pain crises\n"
+        response += "• **Eat a balanced diet:** Include leafy greens, fruits, and whole grains\n"
+        response += "• **Get enough rest:** Fatigue is common — prioritize sleep and rest\n"
+        response += "• **Prevent infections:** Wash hands, stay updated on vaccines, and avoid sick people\n"
+        response += "• **Manage stress:** Use relaxation techniques like deep breathing or meditation\n"
+        response += "• **Follow treatment plans:** Take medications (like hydroxyurea) as prescribed\n\n"
+        response += "**Key message:**\n"
+        response += "Good self-care reduces complications and improves quality of life. Regular doctor visits and healthy habits make a big difference."
+        return response, False
+
+    elif question_type == 'symptoms':
+        response += "**Symptoms of Sickle Cell Disease**\n\n"
+        response += "Sickle cell disease can cause a wide range of symptoms that vary from person to person and over time.\n\n"
+        response += "**Most common symptoms include:**\n"
+        response += "• Episodes of pain (called sickle cell crises)\n"
+        response += "• Fatigue or low energy\n"
+        response += "• Swelling in the hands and feet\n"
+        response += "• Frequent infections\n"
+        response += "• Delayed growth and puberty\n"
+        response += "• Vision problems\n"
+        response += "• Pale or yellowish skin (jaundice)\n\n"
+        response += "**Pain crises:**\n"
+        response += "• Sudden and severe pain, often in the chest, joints, or abdomen\n"
+        response += "• Caused by blocked blood flow due to sickle-shaped cells\n\n"
+        response += "**Key message:**\n"
+        response += "Symptoms can be managed with medication, hydration, rest, and regular checkups. Always consult a doctor if symptoms worsen or change."
+        return response, False
+
     elif question_type == 'blood_effect':
-        response += "**How does sickle cell anemia affect blood cells?**\n\n"
-        response += "**Normal vs. Sickle Cell Blood:**\n\n"
-        response += "**Normal red blood cells:**\n"
-        response += "• Round, disc-shaped and flexible\n• Contain normal hemoglobin (HbA)\n• Live for about 120 days\n• Move easily through blood vessels\n• Carry oxygen efficiently\n\n"
-        response += "**Sickle red blood cells:**\n"
-        response += "• Crescent or banana-shaped (sickle-shaped)\n• Contain abnormal hemoglobin (HbS)\n• Live only 10-20 days (much shorter!)\n• Rigid and sticky\n• Can block small blood vessels\n\n"
-        response += "**What happens to the blood:**\n"
-        response += "• **Anemia:** Fewer red blood cells because they die quickly\n• **Poor oxygen delivery:** Sickled cells carry less oxygen\n• **Blood clots:** Sticky cells clump together\n• **Blocked vessels:** Rigid cells get stuck in small blood vessels\n• **Pain:** When blood flow is blocked to organs/tissues\n\n"
-        response += "**Other blood changes:**\n"
-        response += "• Higher white blood cell count (fighting inflammation)\n• Platelets may be elevated\n• Reticulocytes (young red blood cells) increased as body tries to replace damaged cells\n\n"
-        response += "**Result:** The blood cannot do its job properly, leading to all the symptoms of sickle cell disease."
-    
+        response += "**🩸 How Does Sickle Cell Disease Affect Blood Cells?**\n\n"
+        response += "Sickle cell disease causes red blood cells to become **abnormally shaped**, like a crescent or sickle, instead of the usual round and flexible shape.\n\n"
+        response += "**These sickle-shaped cells:**\n"
+        response += "• Are **rigid and sticky**\n"
+        response += "• Can **clump together** and block blood flow\n"
+        response += "• **Break down easily**, leading to low red blood cell counts (anemia)\n\n"
+        response += "**Effects on the blood and body:**\n"
+        response += "• **Anemia:** Due to shorter lifespan of sickle cells (10–20 days vs 120 days for normal cells)\n"
+        response += "• **Pain crises:** Caused by blocked blood flow to organs and joints\n"
+        response += "• **Organ damage:** From lack of oxygen due to poor blood circulation\n"
+        response += "• **Fatigue & weakness:** Because of reduced oxygen delivery throughout the body\n\n"
+        response += "**Key message:** Sickle cell disease primarily affects red blood cells, which leads to complications throughout the entire body due to poor oxygen delivery."
+        return response, False
+
     elif question_type == 'trait_vs_disease':
         response += "**What's the difference between sickle cell trait and sickle cell disease?**\n\n"
         response += "**Sickle Cell Trait (SCT):**\n"
@@ -679,7 +877,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• **Trait × Normal:** 50% chance trait, 50% normal children\n• **Trait × Trait:** 25% disease, 50% trait, 25% normal children\n• **Disease × Normal:** 100% trait children\n• **Disease × Trait:** 50% disease, 50% trait children\n• **Disease × Disease:** 100% disease children\n\n"
         response += "**Key difference:** Trait = carrier (usually healthy), Disease = affected (needs medical care)\n\n"
         response += "**Both are important to know about for family planning decisions!**"
-    
+        return response, False
+
     elif question_type == 'gender_inheritance':
         response += "**Can both boys and girls inherit sickle cell equally?**\n\n"
         response += "**Yes, absolutely! Sickle cell disease affects boys and girls equally.**\n\n"
@@ -692,7 +891,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Statistics worldwide:**\n"
         response += "• Roughly 50% male, 50% female patients\n• No gender is 'protected' from inheriting it\n\n"
         response += "**Bottom line:** Sickle cell doesn't discriminate by gender - it affects boys and girls equally!"
-    
+        return response, False
+
     elif question_type == 'early_signs':
         response += "**What are early signs of sickle cell anemia in young kids?**\n\n"
         response += "**Very early signs (6 months - 2 years):**\n\n"
@@ -705,7 +905,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**When to be concerned:**\n"
         response += "• Any combination of these symptoms\n• Family history of sickle cell\n• Symptoms that keep coming back\n\n"
         response += "**Important:** Many countries now test ALL newborns for sickle cell, so most cases are caught before symptoms appear. Early detection allows for preventive treatment!"
-    
+        return response, False
+
     elif question_type == 'untreated':
         response += "**What happens if sickle cell is left untreated or ignored?**\n\n"
         response += "**Serious complications can develop:**\n\n"
@@ -718,7 +919,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Can it be cured if treated late?**\n"
         response += "• **Organ damage:** Usually permanent and cannot be reversed\n• **Future symptoms:** Can still be controlled with treatment\n• **Life expectancy:** Can be improved even with late treatment\n• **Quality of life:** Significantly better with treatment at any age\n\n"
         response += "**Key message:** It's never too late to start treatment, but early treatment prevents permanent damage!"
-    
+        return response, False
+
     elif question_type == 'pain_crisis':
         response += "**Why do people with sickle cell experience pain crises?**\n\n"
         response += "**The basic mechanism:**\n\n"
@@ -733,7 +935,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Duration and intensity:**\n"
         response += "• Can last hours to days\n• Pain can be mild to excruciating\n• Often described as the worst pain imaginable\n\n"
         response += "**Prevention is key:** Staying hydrated and avoiding triggers can reduce frequency of crises."
-    
+        return response, False
+
     elif question_type == 'organs_affected':
         response += "**What organs are affected by sickle cell disease?**\n\n"
         response += "**Sickle cell can affect virtually every organ system:**\n\n"
@@ -756,7 +959,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Skin:**\n"
         response += "• Leg ulcers (especially in adults)\n• Slow healing wounds\n\n"
         response += "**The good news:** With proper medical care, most organ damage can be prevented or minimized!"
-    
+        return response, False
+
     elif question_type == 'growth_development':
         response += "**How does sickle cell affect growth, development, and fertility?**\n\n"
         response += "**Growth Effects:**\n"
@@ -771,7 +975,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Pregnancy considerations:**\n"
         response += "• Genetic counseling recommended\n• 25% chance of sickle cell disease if partner also has trait\n• Prenatal testing available\n• Extra medical care needed during pregnancy\n\n"
         response += "**Key message:** Most people with sickle cell can have normal development and families with proper medical support!"
-    
+        return response, False
+
     elif question_type == 'prenatal':
         response += "**Can sickle cell be detected before birth?**\n\n"
         response += "**Yes! Sickle cell disease can be detected during pregnancy.**\n\n"
@@ -787,7 +992,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**What the results mean:**\n"
         response += "• Testing can tell if baby will have disease, trait, or be normal\n• Helps parents prepare for medical care if needed\n• Allows for early treatment planning\n\n"
         response += "**Important:** Prenatal testing is a personal choice. Genetic counseling can help parents understand options and make informed decisions."
-    
+        return response, False
+
     elif question_type == 'donor_eligibility':
         response += "**Who is eligible to give bone marrow for sickle cell treatment?**\n\n"
         response += "**Best donors (in order of preference):**\n\n"
@@ -804,25 +1010,43 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Testing process:**\n"
         response += "• Blood test for HLA typing\n• Medical evaluation\n• Psychological evaluation\n\n"
         response += "**Reality:** Only about 20-30% of patients have a suitable donor, which is why other treatments are important too."
-    
+        return response, False
+
     elif question_type == 'treatment_risks':
-        response += "**What are the risks of sickle cell treatments (permanent vs temporary)?**\n\n"
-        response += "**TEMPORARY TREATMENTS (Medications/Management):**\n\n"
-        response += "**Hydroxyurea (most common medicine):**\n"
-        response += "• **Low risk:** Generally very safe\n• Possible side effects: Mild nausea, skin darkening\n• Rare: Low blood counts (monitored with blood tests)\n• Long-term use appears safe\n\n"
-        response += "**Pain medications:**\n"
-        response += "• **Low to moderate risk**\n• Risk of dependency if not managed properly\n• Side effects: Drowsiness, constipation\n• Generally safe when used as prescribed\n\n"
-        response += "**Blood transfusions:**\n"
-        response += "• **Moderate risk**\n• Risk of iron overload (with repeated transfusions)\n• Small risk of infection\n• Allergic reactions (rare)\n\n"
-        response += "**PERMANENT TREATMENTS:**\n\n"
-        response += "**Bone Marrow Transplant:**\n"
-        response += "• **Higher risk but potentially curative**\n• Death risk: 5-10% (in experienced centers)\n• Graft-versus-host disease: 20-40% risk\n• Infections during recovery\n• Infertility (rare)\n• Secondary cancers (very rare)\n\n"
-        response += "**Gene Therapy (experimental):**\n"
-        response += "• Still being studied\n• Early results promising\n• Long-term effects unknown\n• Very expensive\n\n"
-        response += "**Risk vs. Benefit:**\n"
-        response += "• Temporary treatments: Low risk, good symptom control\n• Permanent treatments: Higher risk, but potential cure\n• Decision depends on severity of disease and individual factors\n\n"
-        response += "**Key point:** Most people do very well with temporary treatments and may not need the higher-risk permanent options."
-    
+        response += "**⚠️ What Are the Risks or Side Effects of Sickle Cell Treatments?**\n\n"
+
+        response += "**💊 Hydroxyurea (Most common medication):**\n"
+        response += "• Lower white blood cell count (temporary)\n"
+        response += "• Nausea, loss of appetite\n"
+        response += "• Skin or nail darkening\n"
+        response += "• Rare: Fertility effects, blood cancers (very rare)\n\n"
+
+        response += "**💉 Blood Transfusions:**\n"
+        response += "• Iron overload (may need chelation)\n"
+        response += "• Very low risk of infections\n"
+        response += "• Rare allergic reactions or antibodies\n\n"
+
+        response += "**🏥 Bone Marrow Transplant (Curative but high-risk):**\n"
+        response += "• 5-10% risk of serious complications\n"
+        response += "• Rejection (Graft-vs-Host Disease)\n"
+        response += "• Infection during recovery\n"
+        response += "• Fertility loss, organ damage (in rare cases)\n\n"
+
+        response += "**🧬 Gene Therapy (Experimental):**\n"
+        response += "• Long-term risks not fully known\n"
+        response += "• Expensive\n"
+        response += "• Early results are promising\n\n"
+
+        response += "**💊 Pain Medications (Opioids, NSAIDs):**\n"
+        response += "• Constipation, drowsiness, liver stress\n"
+        response += "• Risk of dependence if overused\n\n"
+
+        response += "**✅ Final Takeaway:**\n"
+        response += "• Most treatments are safe when monitored properly\n"
+        response += "• Doctors weigh risks vs. benefits before prescribing\n"
+        response += "• Always follow up regularly and report side effects early\n"
+        response += "• Never stop treatment without consulting a hematologist"
+        return response, False
     
     elif question_type == 'treatment_types':
         response += "**What are permanent vs temporary treatments? How effective are they?**\n\n"
@@ -836,9 +1060,10 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Gene Therapy (Experimental):**\n"
         response += "• Early trials show 80-90% success\n• Still in clinical trials\n• May become widely available in 5-10 years\n\n"
         response += "**Bottom line:** Temporary treatments work very well for most people, permanent cures exist but aren't suitable for everyone."
-    
+        return response, False
+
     elif question_type == 'lifestyle':
-        response += "**What lifestyle changes can reduce pain crisis?**\n\n"
+        response += "**How Should Someone with Sickle Cell Adapt Their Lifestyle?**\n\n"
         response += "**MOST IMPORTANT - Stay Hydrated:**\n"
         response += "• Drink 8-10 glasses of water daily\n• Dehydration is the #1 trigger for pain crisis\n• Carry water bottle everywhere\n\n"
         response += "**Avoid Temperature Extremes:**\n"
@@ -850,24 +1075,28 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Exercise Wisely:**\n"
         response += "• Light to moderate exercise is good\n• Avoid intense, exhausting workouts\n• Swimming is excellent (if water isn't too cold)\n• Stop if you feel tired\n\n"
         response += "**These changes can reduce pain crises by 40-60%!**"
-    
-    elif question_type == 'country_stats':
-        response += "**Which countries have the highest number of sickle cell cases?**\n\n"
-        response += "**Highest numbers worldwide:**\n\n"
-        response += "**1. Nigeria** - Over 4 million people\n"
-        response += "**2. Democratic Republic of Congo** - About 2 million\n"
-        response += "**3. India** - Around 1.5 million\n"
-        response += "**4. Angola** - About 800,000\n"
-        response += "**5. United States** - Around 100,000\n\n"
-        response += "**Highest rates (percentage of population):**\n"
-        response += "• **Sub-Saharan Africa:** 1-3% of population\n"
-        response += "• **Nigeria:** Up to 25% carry the gene\n"
-        response += "• **Saudi Arabia:** High rates in certain regions\n"
-        response += "• **India:** Especially tribal populations\n\n"
-        response += "**Why these regions?**\n"
-        response += "• Areas where malaria was/is common\n• Sickle cell trait protects against malaria\n• So the gene survived in these populations\n\n"
-        response += "**Note:** Africa has 75% of all sickle cell cases worldwide."
-    
+        return response, False
+
+    elif question_type == 'treatment_locations':
+        response += "**🏥 Best Hospitals and Centers for Sickle Cell Treatment**\n\n"
+
+        response += "**Top Hospitals Worldwide:**\n"
+        response += "• **St. Jude Children’s Research Hospital (USA)** – Known for pediatric sickle cell care and clinical trials\n"
+        response += "• **NIH Clinical Center (USA)** – Offers gene therapy trials\n"
+        response += "• **King’s College Hospital (UK)** – Home to Europe’s largest sickle cell unit\n"
+        response += "• **Apollo Hospitals (India)** – Offers bone marrow transplants and hematology\n"
+        response += "• **SickKids Hospital (Canada)** – Excellent for pediatric sickle cell management\n"
+        response += "• **INSERM/Necker Hospital (France)** – Advanced care and research\n\n"
+
+        response += "**What Makes a Center Great:**\n"
+        response += "• Specialized hematologists\n"
+        response += "• Bone marrow transplant programs\n"
+        response += "• Access to clinical trials\n"
+        response += "• Genetic counseling and long-term care\n\n"
+
+        response += "**Tip:** Large academic hospitals or government-approved sickle cell centers often offer the best outcomes."
+        return response, False
+        
     elif question_type == 'sickle_types':
         response += "**What types of sickle cell disease are there?**\n\n"
         response += "**Main types (from most to least severe):**\n\n"
@@ -881,7 +1110,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• Only one sickle gene\n• Usually no symptoms\n• Can pass gene to children\n• About 8% of African Americans have this\n\n"
         response += "**Rare types:** HbSD, HbSE, HbSO - very uncommon\n\n"
         response += "**How to know which type:** Need blood test called hemoglobin electrophoresis."
-    
+        return response, False
+
     elif question_type == 'type_detection':
         response += "**Can you detect the type of sickle cell from an image?**\n\n"
         response += "**Short answer: NO** - Images alone cannot determine the specific type.\n\n"
@@ -900,7 +1130,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• Quick screening test\n• Only shows if sickle hemoglobin is present\n\n"
         if is_sickle:
             response += f"\n**For your image:** I can see sickle cells ({confidence*100:.1f}% confidence), but you'll need the lab tests above to know the exact type."
-    
+        return response, False
+
     elif question_type == 'blood_smear':
         response += "**What can a blood smear tell about sickle cell?**\n\n"
         response += "**A blood smear can reveal:**\n\n"
@@ -917,7 +1148,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Bottom line:** Blood smear is helpful for diagnosis but needs to be combined with other tests for complete picture."
         if is_sickle:
             response += f"\n\n**Your blood smear:** Shows signs consistent with sickle cell disease ({confidence*100:.1f}% confidence)."
-    
+        return response, False
+
     elif question_type == 'checkup_frequency':
         response += "**How often do I need checkups and tests?**\n\n"
         response += "**For Adults with Sickle Cell Disease:**\n\n"
@@ -935,24 +1167,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• Pregnancy\n• Recent complications\n• Starting new medications\n• Before/after surgery"
         if is_sickle:
             response += f"\n\n**Since your blood test suggests sickle cell disease ({confidence*100:.1f}% confidence), please establish care with a hematologist soon.**"
-    
-    elif question_type == 'treatment_risks':
-        response += "**What are the side effects of sickle cell treatments?**\n\n"
-        response += "**Hydroxyurea (Most common medication):**\n\n"
-        response += "**Common side effects:**\n"
-        response += "• Lower white blood cell count (temporary)\n• Nausea, loss of appetite\n• Darkening of skin/nails\n• Hair loss (usually grows back)\n\n"
-        response += "**Rare but serious:**\n"
-        response += "• Increased infection risk\n• Possible fertility effects\n• Very rarely, blood cancers\n\n"
-        response += "**Blood Transfusions:**\n"
-        response += "• Iron overload (needs monitoring)\n• Risk of infections (very low with modern screening)\n• Allergic reactions\n• Antibody formation\n\n"
-        response += "**Bone Marrow Transplant:**\n"
-        response += "• Rejection of transplant (graft-vs-host disease)\n• Increased infection risk\n• Fertility problems\n• Other organ damage\n• 5-10% risk of serious complications\n\n"
-        response += "**Pain Medications:**\n"
-        response += "• Opioids can be addictive\n• Liver damage with long-term use\n• Drowsiness, constipation\n\n"
-        response += "**Important notes:**\n"
-        response += "• Most side effects are manageable\n• Benefits usually outweigh risks\n• Regular monitoring prevents serious problems\n• Never stop medications without doctor's approval\n\n"
-        response += "**The key:** Work closely with your hematologist to monitor and adjust treatments."
-    
+        return response, False
+
     elif question_type == 'ayurvedic':
         response += "**Is there any Ayurvedic treatment for sickle cell?**\n\n"
         response += "**Ayurvedic approaches being studied:**\n\n"
@@ -967,7 +1183,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Best approach:**\n"
         response += "• Continue standard medical treatment\n• Add Ayurvedic therapies under supervision\n• Find qualified Ayurvedic practitioners\n• Regular monitoring by both doctors\n\n"
         response += "**Bottom line:** Ayurveda can be helpful as additional support, but modern medicine remains essential for sickle cell disease."
-    
+        return response, False
+
     elif question_type == 'home_remedy':
         response += "**What should I do during pain crisis at home?**\n\n"
         response += "**Immediate home management:**\n\n"
@@ -986,7 +1203,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**⚠️ GO TO HOSPITAL IMMEDIATELY IF:**\n"
         response += "• Fever over 101.3°F (38.5°C)\n• Difficulty breathing\n• Severe chest pain\n• Severe headache\n• Vision changes\n• Weakness or numbness\n• Pain not responding to home treatment after 2-3 hours\n• Vomiting and can't keep fluids down\n\n"
         response += "**🚨 Don't delay hospital visit - go as soon as possible if you have any warning signs! Sickle cell crises can become life-threatening quickly.**"
-    
+        return response, False
+
     elif question_type == 'hospital_timing':
         response += "**When should I go to the hospital?**\n\n"
         response += "**🚨 GO IMMEDIATELY (Call 911 or Emergency):**\n\n"
@@ -1007,7 +1225,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**🏥 REMEMBER:**\n"
         response += "• Don't wait and see if it gets better\n• It's better to go early than too late\n• Emergency rooms understand sickle cell emergencies\n• Bring your medication list and medical records if possible\n\n"
         response += "**⚠️ NEVER ignore fever or breathing problems - these can be life-threatening in sickle cell patients!**"
-    
+        return response, False
+
     elif question_type == 'travel':
         response += "**Can I travel? What precautions should I take?**\n\n"
         response += "**Yes, you can travel! But with precautions:**\n\n"
@@ -1030,7 +1249,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• High altitude destinations\n• Very cold climates\n• Areas with limited medical facilities\n• Places with disease outbreaks\n\n"
         response += "**Emergency plan:**\n"
         response += "• Know how to access healthcare abroad\n• Have emergency contacts readily available\n• Know your blood type and medication allergies\n• Consider medical evacuation insurance"
-    
+        return response, False
+
     elif question_type == 'safe_childbearing':
         response += "**If I have sickle cell, how can I have children safely?**\n\n"
         response += "**Yes, you can have children safely with proper planning!**\n\n"
@@ -1053,7 +1273,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "**Success rates:**\n"
         response += "• With proper care, most pregnancies are successful\n• Modern medical care has greatly improved outcomes\n• Most babies are born healthy\n\n"
         response += "**Key message:** Plan ahead, get specialized care, and most women with sickle cell can have healthy pregnancies and babies!"
-    
+        return response, False
+
     elif question_type == 'doctor_specialist':
         response += "**Which doctor should I go to? What is the specialist called?**\n\n"
         response += "**Primary specialist: HEMATOLOGIST**\n\n"
@@ -1074,7 +1295,8 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• Doctors who don't understand sickle cell\n• Those who dismiss your pain\n• Lack of experience with the disease\n• No access to emergency care\n\n"
         if is_sickle:
             response += f"\n**Since your blood test suggests sickle cell disease ({confidence*100:.1f}% confidence), I strongly recommend seeing a hematologist as soon as possible for proper diagnosis and treatment planning.**"
-    
+        return response, False
+
     elif question_type == 'treatment_locations':
         response += "**Which are the best places for sickle cell treatment?**\n\n"
         response += "**Best countries for treatment:**\n\n"
@@ -1099,6 +1321,7 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
         response += "• Nigeria: University College Hospital Ibadan\n• Ghana: Korle Bu Teaching Hospital\n• India: AIIMS Delhi, CMC Vellore\n• Brazil: HEMORIO Rio de Janeiro\n\n"
         response += "**Cost considerations:**\n"
         response += "• US has best treatments but very expensive\n• European countries offer good care with lower costs\n• Some countries have medical tourism programs\n• Insurance coverage varies greatly"
+        return response, False
 
     else:  # general questions
         if is_sickle:
@@ -1108,7 +1331,7 @@ def generate_response(question_type, prediction_label, confidence, corrected_que
             response += f"Your blood sample looks normal and healthy! My analysis shows {confidence*100:.1f}% confidence that these are normal red blood cells without any signs of sickling.\n\n"
             response += "Feel free to ask me any questions about sickle cell disease in general, or if you have other concerns about blood health. I'm here to help explain anything you'd like to understand better."
     
-    return response  # False means don't show processed image
+    return response, False  # False means don't show processed image
 
 # Enhanced VQA logic
 def vqa_answer(question, image_path, prediction_label, confidence):
@@ -1126,11 +1349,11 @@ def vqa_answer(question, image_path, prediction_label, confidence):
             img = cv2.imread(image_path)
             result_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
-        response, _ = generate_response(question_type, prediction_label, confidence, corrected_question, corrections_made)
+        response, _ = generate_response(...)
         return response, result_img
     else:
-        response, show_image = generate_response(question_type, prediction_label, confidence, corrected_question, corrections_made)
-        return response, None
+        response, open_tool = generate_response(...)
+        return response, None, open_tool
 
 # ----------------- Streamlit App ------------------
 
@@ -1172,22 +1395,28 @@ if uploaded:
     question = st.text_input("🤔 Type your question here:", placeholder="e.g., What are the symptoms of sickle cell disease?")
 
     if question:
-       with st.spinner("🧠 Analyzing your question..."):
-            # Understand question
-            q_type, corrected_q, corrections = understand_question(question)
-            # Generate response
-            answer = generate_response(q_type, label, confidence, corrected_q, corrections)
+        with st.spinner("🧠 Analyzing your question..."):
+        # Understand question
+         q_type, corrected_q, corrections = understand_question(question)
+        
+        # Generate response
+         answer, open_tool = generate_response(q_type, label, confidence, corrected_q, corrections)
 
-            # Show image only for 'highlight' type
-            if q_type == "highlight":
-                highlighted_img = highlight_cells(image_path)
-                st.markdown("### 🔍 Processed Image:")
-                st.image(highlighted_img, caption="Highlighted Sickle Cells", use_column_width=True)
-                st.markdown("### 💡 Answer:")
-                st.write("Sickle cells have been highlighted in red and orange boxes in the image above.")
+        # Show image only for 'highlight' type
+         if q_type == "highlight":
+            highlighted_img = highlight_cells(image_path)
+            st.markdown("### 🔍 Processed Image:")
+            st.image(highlighted_img, caption="Highlighted Sickle Cells", use_column_width=True)
+            st.markdown("### 💡 Answer:")
+            st.write("Sickle cells have been highlighted in red and orange boxes in the image above.")
+         else:
+            if open_tool:
+                open_color_analysis_tool()
+                st.success("✅ Color analysis tool opened in your browser!")
             else:
                 st.markdown("### 💡 Answer:")
                 st.markdown(answer)
+
 
 
     # Add helpful information section
